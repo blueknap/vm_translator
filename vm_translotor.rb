@@ -1,7 +1,3 @@
-# Memory Access Commands
-# push segment index: Push the value of segment[index] on the stack
-# pop segment index: Pop the top stock value and store it in segment[index]
-
 module CommandType
   C_PUSH = 'c_push'.freeze
   C_POP = 'c_pop'.freeze
@@ -20,12 +16,10 @@ class Parser
       advance
       case command_type
       when CommandType::C_PUSH
-        puts "PUSH command line:#{@line}, #{arg1} #{arg2}"
-        code_writer.write_push('push', arg1, arg2)
+        code_writer.write_push('push', arg1, arg2, @line)
       when CommandType::C_POP
-        puts "POP command line:#{@line}, #{arg1} #{arg2}"
+        code_writer.write_pop('pop', arg1, arg2, @line)
       when CommandType::C_ARITHMETIC
-        puts "ARITHMETIC command line:#{@line}, #{@current_command}"
         code_writer.write_arithmethic(@current_command, @line)
       else
         # puts "else line: #{@line}"
@@ -85,27 +79,112 @@ end
 class CodeWriter
   def initialize(output_filename)
     @output_file = File.new(output_filename, 'a')
+    @current_line = nil
   end
 
   # Writes the assembly code that is the translation of given arithmetic command
   def write_arithmethic(command, line)
+    @current_line = line
     translation = aritmetic_translation(command, line)
     @output_file.write(translation.join("\n"))
   end
 
-  # Where the command is either C_POP or C_PUSH
-  # push segment index
-  def write_pushpop(_command, _segment, _index)
-    puts 'Translate the given pop or push command'
+  def write_push(command, segment, index, line)
+    @current_line = line
+    translation = translate_push(command, segment, index)
+    @output_file.write(translation.join("\n"))
   end
 
-  def write_push(_command, _segment, index)
-    @output_file.write(translate_push_constant(index).join("\n"))
-    # @output_file.close
+  def write_pop(command, segment, index, line)
+    @current_line = line
+    translation = translate_pop(command, segment, index)
+    @output_file.write(translation.join("\n"))
   end
 
   private
 
+  #
+  # Memory Access Commands
+  #
+
+  #
+  # Memory Segments Mappping
+  # Each segment is mapped direclty on the RAM, and its location is maintained
+  # by keeping its physical base address in a dedicated register(LCL, ARG, THIS, THAT etc)
+  # Segment[i] -> RAM[base + i]
+  def segment_base_addr
+    {
+      local: 'LCL',
+      argument: 'ARG',
+      this: 'THIS',
+      that: 'THAT',
+      pointer: 3,
+      temp: 5
+    }
+  end
+
+  # push segment index: Push the value of segment[index] on the stack
+  # addr = segment_base_addr + index, *SP = *addr, SP++
+  # Current VM function's respective segment
+  # SP points to the next topmost location in the stack
+  def translate_push(command, segment, index)
+    return translate_push_constant(command, segment, index) if segment == 'constant'
+    [
+      "\n// #{command} #{segment} #{index} --line: #{@current_line}",
+      "@#{segment_base_addr[segment.to_sym]}",
+      %w[pointer temp].include?(segment) ? 'D=A' : 'D=M',
+      "@#{index}",
+      'D=D+A', # D = RAM[LCL] + index -- addr = LCL + index
+      'A=D',
+      'D=M', # D = RAM[RAM[LCL] + index] -- *addr
+      '@SP',
+      'A=M', # A = RAM[SP]
+      'M=D', # *SP = *addr
+      '@SP',
+      'M=M+1' # SP++
+    ]
+  end
+
+  # pop segment index: Pop the top stack value and store it in segment[index]
+  # addr = segment_base_addr + index, SP--, *addr = *SP
+  def translate_pop(command, segment, index)
+    [
+      "\n// #{command} #{segment} #{index} --line: #{@current_line}",
+      "@#{segment_base_addr[segment.to_sym]}",
+      %w[pointer temp].include?(segment) ? 'D=A' : 'D=M',
+      "@#{index}",
+      'D=D+A', # D = segment_base_addr + index
+      "@addr_#{@current_line}",
+      'M=D', # addr_line = segment_base_addr + index
+      '@SP',
+      'M=M-1', # SP--
+      'A=M',
+      'D=M',
+      "@addr_#{@current_line}",
+      'A=M',
+      'M=D' # *addr = *SP
+
+    ]
+  end
+
+  def translate_push_constant(command, segment, value)
+    [
+      "\n// #{command} #{segment} #{value} --line: #{@current_line}",
+      ## *SP = index
+      "@#{value}", # A=index
+      'D=A', # D=index,
+      '@SP', # A=SP and RAM[SP] selected, M = RAM[SP]
+      'A=M', # A=RAM[SP], A=*SP
+      'M=D', # RAM[SP] = index, *SP = index
+      ## SP++
+      '@SP', # M=RAM[SP]
+      'M=M+1' # RAM[SP] = RAM[SP] + 1
+    ]
+  end
+
+  #
+  # Stack Arithmetic
+  #
   def aritmetic_translation(command, line)
     map = {
       add: :translate_arithmetic_add,
@@ -260,21 +339,6 @@ class CodeWriter
       'M=!M'
     ]
   end
-
-  def translate_push_constant(value)
-    [
-      "\n// push constant #{value}",
-      ## *SP = index
-      "@#{value}", # A=index
-      'D=A', # D=index,
-      '@SP', # A=SP and RAM[SP] selected, M = RAM[SP]
-      'A=M', # A=RAM[SP], A=*SP
-      'M=D', # RAM[SP] = index, *SP = index
-      ## SP++
-      '@SP', # M=RAM[SP]
-      'M=M+1' # RAM[SP] = RAM[SP] + 1
-    ]
-  end
 end
 
 require 'pathname'
@@ -283,7 +347,9 @@ def main
   file_name = ARGV[0]
   parser = Parser.new(file_name)
   basename = File.basename(file_name, '.vm')
-  code_writer = CodeWriter.new("#{basename}.asm")
+  output_file_name = "#{basename}.asm"
+  File.delete(output_file_name) if File.exist?(output_file_name)
+  code_writer = CodeWriter.new(output_file_name)
   parser.parse(code_writer)
 end
 
