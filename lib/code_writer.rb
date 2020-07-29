@@ -25,7 +25,76 @@ module VMTranslator
       @output_file.write(translation.join("\n"))
     end
 
+    #
+    # Program flow / Branching Commands
+
+    # VM initialization, bootstrap code
+    # Must be placed at the begining of the output file
+    def write_init; end
+
+    # label command
+    def write_label(label, line)
+      @current_line = line
+      translation = translate_label(label)
+      @output_file.write(translation.join("\n"))
+    end
+
+    # goto command
+    def write_goto(label, line)
+      @current_line = line
+      translation = translate_goto(label)
+      @output_file.write(translation.join("\n"))
+    end
+
+    # if-goto command
+    def write_if_goto(label, line)
+      @current_line = line
+      translation = translate_if_goto(label)
+      @output_file.write(translation.join("\n"))
+    end
+
     private
+
+    #
+    # Program flow commands
+    #
+
+    # label label
+    # labels the current location in the function's code
+    def translate_label(label)
+      [
+        "\n// label #{label} --line: #{@current_line}",
+        "(#{label})"
+      ]
+    end
+
+    # goto label
+    # unconditional goto operation
+    # causing execution to continue from the location marked by the label
+    # jump destination must be located in the same function
+    def translate_goto(label)
+      [
+        "\n// goto #{label} --line: #{@current_line}",
+        "@#{label}",
+        '0;JMP'
+      ]
+    end
+
+    # if-goto label
+    # conditional goto operation
+    # The stack's top most value is popped
+    # if the value is not zero execution continues from the location marked by label
+    # otherwise, continues from the next command
+    def translate_if_goto(label)
+      [
+        "\n// if_goto #{label} --line: #{@current_line}",
+        '@SP',
+        'AM=M-1',
+        'D=M',
+        "@#{label}",
+        'D;JGT'
+      ]
+    end
 
     #
     # Memory Access Commands

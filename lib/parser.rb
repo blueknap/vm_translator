@@ -16,6 +16,12 @@ module VMTranslator
           code_writer.write_pop('pop', arg1, arg2, @line)
         when CommandType::C_ARITHMETIC
           code_writer.write_arithmethic(@current_command, @line)
+        when CommandType::C_LABEL
+          code_writer.write_label(arg1, @line)
+        when CommandType::C_GOTO
+          code_writer.write_goto(arg1, @line)
+        when CommandType::C_IF_GOTO
+          code_writer.write_if_goto(arg1, @line)
         else
           # puts "else line: #{@line}"
         end
@@ -46,6 +52,9 @@ module VMTranslator
       return CommandType::C_PUSH if @current_command.start_with?('push')
       return CommandType::C_POP if @current_command.start_with?('pop')
       return CommandType::C_ARITHMETIC if arithmetic_commands.include?(@current_command)
+      return CommandType::C_LABEL if @current_command.start_with?('label')
+      return CommandType::C_GOTO if @current_command.start_with?('goto')
+      return CommandType::C_IF_GOTO if @current_command.start_with?('if-goto')
     end
 
     private
