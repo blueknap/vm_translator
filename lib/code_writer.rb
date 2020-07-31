@@ -27,6 +27,7 @@ module VMTranslator
 
     #
     # Program flow / Branching Commands
+    #
 
     # VM initialization, bootstrap code
     # Must be placed at the begining of the output file
@@ -53,7 +54,159 @@ module VMTranslator
       @output_file.write(translation.join("\n"))
     end
 
+    #
+    # Function calling
+    #
+
+    # Function command
+    # function f n
+    # Starts the code of a function named f that has n local variables
+    def write_function(function_name, num_locals, line)
+      @current_line = line
+      translation = translate_function(function_name, num_locals)
+      @output_file.write(translation.join("\n"))
+    end
+
+    # Call function
+    # call f m
+    # call function f, stating that m arguments have already been pushed on the stack by the caller
+    def write_call(function_name, num_args, line); end
+
+    # Return to the calling function
+    def write_return(line)
+      @current_line = line
+      translation = translate_return
+      @output_file.write(translation.join("\n"))
+    end
+
     private
+
+    #
+    # Function commands
+    #
+
+    # VM command:function f k
+    # Declare a function f that has k local variables
+    # Generated code(pseudo):
+    # (f)       -- Declare a label for the function entry
+    #   repeat k times:
+    #   push 0  -- initailize all of them to 0
+    # Each VM function f should generate a symbol f that refers to its entry point in the instruction memory
+    # Allocate and initialize the local vars to 0
+    #
+    def translate_function(function_name, num_locals)
+      str = [
+        "\n// Function #{function_name} --line: #{@current_line}",
+        # label function name
+        "(#{function_name})"
+      ]
+      num_locals.times do |i|
+        @current_line += 1
+        str << translate_push_constant('push', 'constant', 0).join("\n")
+        @current_line += 1
+        str << translate_pop('pop', 'local', i).join("\n")
+      end
+      str
+    end
+
+    # VM command: return
+    # Return from a function
+    # Generated pseudo code:
+    #   endFrame = LCL            -- endFrame is a tmp variable
+    #   retAddr = *(endFrame - 5) -- put the return addr into tmp var
+    #   *ARG = pop()              -- Reposition the return value for the caller
+    #   SP   = ARG + 1            -- Restore SP of the caller
+    #   THAT = *(endFrame - 1)    -- Restore THAT of the caller
+    #   THIS = *(endFrame - 2)    -- Restore THIS of the caller
+    #   ARG  = *(endFrame - 3)    -- Restore ARG of the caller
+    #   LCL  = *(endFrame - 4)    -- Restore LCL of the caller
+    #   goto retAddr              -- Goto return address in the caller's code
+    def translate_return
+      [
+        "\n// return --line: #{@current_line}",
+        # endFrame = LCL
+        '@LCL',
+        'D=M',
+        '@endFrame',
+        'M=D',
+        # retAddr = *(endFrame - 5)
+        '@endFrame',
+        'D=M',
+        '@5',
+        'D=D-A',
+        'A=D',
+        'D=M',
+        '@retAddr',
+        'M=D',
+        # *ARG = pop()
+        '@SP',
+        'M=M-1',
+        'A=M',
+        'D=M',
+        '@ARG',
+        'A=M',
+        'M=D',
+        # SP = ARG + 1
+        '@ARG',
+        'D=M',
+        'D=D+1',
+        '@SP',
+        'M=D',
+        # THAT = *(endFrame - 1)
+        '@endFrame',
+        'D=M',
+        'D=D-1',
+        'A=D',
+        'D=M',
+        '@THAT',
+        'M=D',
+        # THIS = *(endFrame - 2)
+        '@endFrame',
+        'D=M',
+        '@2',
+        'D=D-A',
+        'A=D',
+        'D=M',
+        '@THIS',
+        'M=D',
+        # ARG = *(endFrame - 3)
+        '@endFrame',
+        'D=M',
+        '@3',
+        'D=D-A',
+        'A=D',
+        'D=M',
+        '@ARG',
+        'M=D',
+        # LCL = *(endFrame - 4)
+        '@endFrame',
+        'D=M',
+        '@4',
+        'D=D-A',
+        'A=D',
+        'D=M',
+        '@LCL',
+        'M=D',
+        # goto retAddr
+        '@retAddr',
+        'A=M',
+        '0;JMP'
+      ]
+    end
+
+    # VM command: call f n
+    # Calling a function f after n arguments have been pushed onto the stack
+    # Generated pseudo code:
+    #   push return-address -- Using the label declared below
+    #   push LCL            -- Save LCL of the calling function
+    #   push ARG            -- Save ARG of the calling function
+    #   push THIS           -- Save THIS of the calling function
+    #   push THAT           -- Save THAT of the calling function
+    #   ARG = SP - n - 5    -- Reposition ARG, n:number of arguments
+    #   LCL = SP            -- Reposition LCL
+    #   goto f              -- Transfer control
+    # (return-address)
+    def tranlsate_call; end
 
     #
     # Program flow commands

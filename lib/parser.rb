@@ -22,6 +22,10 @@ module VMTranslator
           code_writer.write_goto(arg1, @line)
         when CommandType::C_IF_GOTO
           code_writer.write_if_goto(arg1, @line)
+        when CommandType::C_FUNCTION
+          code_writer.write_function(arg1, arg2.to_i, @line)
+        when CommandType::C_RETURN
+          code_writer.write_return(@line)
         else
           # puts "else line: #{@line}"
         end
@@ -55,6 +59,8 @@ module VMTranslator
       return CommandType::C_LABEL if @current_command.start_with?('label')
       return CommandType::C_GOTO if @current_command.start_with?('goto')
       return CommandType::C_IF_GOTO if @current_command.start_with?('if-goto')
+      return CommandType::C_FUNCTION if @current_command.start_with?('function')
+      return CommandType::C_RETURN if @current_command.start_with?('return')
     end
 
     private
